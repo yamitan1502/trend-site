@@ -61,7 +61,6 @@ async function resolveGameUrl(gameName) {
 async function fetchYouTube() {
   console.log('Fetching YouTube trends...');
 
-  // videoCategoryId=20 はYouTubeのゲームカテゴリ
   const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&chart=mostPopular&regionCode=JP&videoCategoryId=20&maxResults=20&key=${process.env.YOUTUBE_API_KEY}`;
   const res = await fetch(url);
   const data = await res.json();
@@ -71,11 +70,14 @@ async function fetchYouTube() {
     return;
   }
 
-  // ゲーム名を抽出してまとめる
   const gameMap = new Map();
 
   for (const item of data.items) {
-    const gameName = item.snippet.tags?.[0]
+    // ゲーム名の取得優先順位:
+    // 1. snippet.tags の中でSteamゲーム名っぽいもの
+    // 2. タイトルの【】「」などから抽出
+    // 3. タイトル全体
+    const gameName = findGameNameFromTags(item.snippet.tags || [])
       || extractGameName(item.snippet.title)
       || item.snippet.title;
 
@@ -126,6 +128,32 @@ function extractGameName(title) {
   for (const pattern of patterns) {
     const match = title.match(pattern);
     if (match) return match[1];
+  }
+  return null;
+}
+
+// tagsの中からゲーム名を探す（配信者名・チャンネル名っぽいものを除外）
+function findGameNameFromTags(tags) {
+  // 除外パターン（配信者名によくある表現）
+  const excludePatterns = [
+    /実況/,
+    /プレイ/,
+    /チャンネル/,
+    /配信/,
+    /gaming/i,
+    /gameplay/i,
+    /walkthrough/i,
+    /playthrough/i,
+    /lets play/i,
+    /let's play/i,
+  ];
+
+  // ゲームっぽいタグを探す（短すぎず長すぎないもの）
+  for (const tag of tags) {
+    const isExcluded = excludePatterns.some(p => p.test(tag));
+    if (!isExcluded && tag.length >= 2 && tag.length <= 40) {
+      return tag;
+    }
   }
   return null;
 }
