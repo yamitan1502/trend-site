@@ -1,9 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
+import ws from 'ws';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
+  process.env.SUPABASE_KEY,
+  {
+    realtime: { transport: ws }
+  }
 );
 
 // ジャンル判定（キーワードで自動分類）
