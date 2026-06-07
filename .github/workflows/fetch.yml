@@ -16,7 +16,7 @@ jobs:
           node-version: '22'
 
       - name: Install dependencies
-        run: npm install @supabase/supabase-js node-fetch
+        run: npm install @supabase/supabase-js node-fetch google-trends-api
 
       - name: Run fetch script
         env:
