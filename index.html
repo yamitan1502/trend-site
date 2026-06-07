@@ -226,17 +226,18 @@
 
   async function loadTrends() {
     const { data, error } = await supabase
-      .from('active_trends')
+      .from('trends')
       .select('*')
+      .gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false });
-
+  
     if (error) {
       document.getElementById('grid').innerHTML =
         '<div class="empty">データの取得に失敗しました。<br>SupabaseのURLとキーを確認してください。</div>';
       console.error(error);
       return;
     }
-
+  
     allTrends = data || [];
     render();
   }
