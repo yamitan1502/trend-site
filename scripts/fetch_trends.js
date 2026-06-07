@@ -103,7 +103,7 @@ async function fetchTwitch() {
 async function upsertTrends(rows) {
   const { error } = await supabase
     .from('trends')
-    .upsert(rows, { onConflict: 'source_id' }); // 同じ動画は上書き更新
+    .upsert(rows, { onConflict: 'source_id' });
 
   if (error) console.error('Supabase upsert error:', error);
 }
