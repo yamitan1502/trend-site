@@ -6,30 +6,63 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// ジャンル判定（キーワードで自動分類）
-function detectGenre(title = '', tags = []) {
-  const text = (title + ' ' + tags.join(' ')).toLowerCase();
-  if (/game|gaming|ゲーム|minecraft|fortnite|apex/.test(text)) return 'ゲーム';
-  if (/music|song|歌|音楽|mv|official/.test(text)) return '音楽';
-  if (/cook|recipe|料理|食べ|グルメ|vlog/.test(text)) return '料理';
-  if (/fashion|outfit|ファッション|コーデ/.test(text)) return 'ファッション';
-  if (/sport|soccer|baseball|スポーツ|野球|サッカー/.test(text)) return 'スポーツ';
-  return 'その他';
+// ─── Steam: ゲーム名からSteamページを検索 ──────────────────
+async function getSteamUrl(gameName) {
+  try {
+    const res = await fetch(
+      `https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(gameName)}&l=japanese&cc=JP`
+    );
+    const data = await res.json();
+    if (data.items && data.items.length > 0) {
+      const appId = data.items[0].id;
+      return `https://store.steampowered.com/app/${appId}/`;
+    }
+  } catch (e) {
+    console.error('Steam API error:', e.message);
+  }
+  return null;
 }
 
-// 注目度スコア計算（再生数・視聴者数から1〜3を返す）
-function calcHeat(value, thresholds) {
-  if (value >= thresholds[1]) return 3;
-  if (value >= thresholds[0]) return 2;
-  return 1;
+// ─── ブラウザゲーム判定 ────────────────────────────────────
+const BROWSER_GAMES = {
+  'among us':        'https://www.innersloth.com/games/among-us/',
+  'skribbl':         'https://skribbl.io/',
+  'gartic phone':    'https://garticphone.com/',
+  'wordle':          'https://www.nytimes.com/games/wordle/index.html',
+  'krunker':         'https://krunker.io/',
+  'slither.io':      'https://slither.io/',
+  'agar.io':         'https://agar.io/',
+  'diep.io':         'https://diep.io/',
+  'surviv.io':       'https://surviv.io/',
+  'little big snake':'https://littlebigsnake.com/',
+};
+
+function getBrowserGameUrl(gameName) {
+  const lower = gameName.toLowerCase();
+  for (const [key, url] of Object.entries(BROWSER_GAMES)) {
+    if (lower.includes(key)) return url;
+  }
+  if (/\.io$/.test(lower)) return `https://${lower}`;
+  return null;
 }
 
-// ─── YouTube ───────────────────────────────────────────
+// ─── ゲームURLを解決（ブラウザゲーム優先、次にSteam）──────
+async function resolveGameUrl(gameName) {
+  const browserUrl = getBrowserGameUrl(gameName);
+  if (browserUrl) return { url: browserUrl, genre: 'ブラウザゲーム' };
+
+  const steamUrl = await getSteamUrl(gameName);
+  if (steamUrl) return { url: steamUrl, genre: 'Steamゲーム' };
+
+  return { url: null, genre: 'ゲーム' };
+}
+
+// ─── YouTube: ゲームカテゴリの動画を取得 ──────────────────
 async function fetchYouTube() {
   console.log('Fetching YouTube trends...');
-  const regionCode = 'JP';
-  const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&chart=mostPopular&regionCode=${regionCode}&maxResults=20&key=${process.env.YOUTUBE_API_KEY}`;
 
+  // videoCategoryId=20 はYouTubeのゲームカテゴリ
+  const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&chart=mostPopular&regionCode=JP&videoCategoryId=20&maxResults=20&key=${process.env.YOUTUBE_API_KEY}`;
   const res = await fetch(url);
   const data = await res.json();
 
@@ -38,36 +71,78 @@ async function fetchYouTube() {
     return;
   }
 
-  const rows = data.items.map(item => ({
-    platform:    'YouTube',
-    genre:       detectGenre(item.snippet.title, item.snippet.tags || []),
-    title:       item.snippet.title,
-    description: item.snippet.description?.slice(0, 120) || '',
-    url:         `https://www.youtube.com/watch?v=${item.id}`,
-    heat:        calcHeat(parseInt(item.statistics.viewCount || 0), [100000, 1000000]),
-    source_id:   `yt_${item.id}`,
-    expires_at:  new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(), // 48時間後に非表示
-  }));
+  // ゲーム名を抽出してまとめる
+  const gameMap = new Map();
+
+  for (const item of data.items) {
+    const gameName = item.snippet.tags?.[0]
+      || extractGameName(item.snippet.title)
+      || item.snippet.title;
+
+    if (!gameName) continue;
+    const key = gameName.toLowerCase();
+
+    if (!gameMap.has(key)) {
+      gameMap.set(key, {
+        name: gameName,
+        views: parseInt(item.statistics.viewCount || 0),
+        count: 1,
+      });
+    } else {
+      const existing = gameMap.get(key);
+      existing.views += parseInt(item.statistics.viewCount || 0);
+      existing.count += 1;
+    }
+  }
+
+  const rows = [];
+  for (const [, game] of gameMap) {
+    const { url, genre } = await resolveGameUrl(game.name);
+    rows.push({
+      platform:    'YouTube',
+      genre,
+      title:       game.name,
+      description: `${game.count}本の動画でトレンド入り • 総再生数 ${game.views.toLocaleString()}回`,
+      url,
+      heat:        calcHeat(game.views, [500000, 5000000]),
+      source_id:   `yt_game_${game.name.toLowerCase().replace(/\s+/g, '_')}`,
+      expires_at:  new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+    });
+  }
 
   await upsertTrends(rows);
   console.log(`YouTube: ${rows.length}件保存`);
 }
 
-// ─── Twitch ────────────────────────────────────────────
-async function getTwitchToken() {
-  const res = await fetch(
+// 動画タイトルからゲーム名を抽出
+function extractGameName(title) {
+  // 「【ゲーム名】」や「'ゲーム名'」のパターンを抽出
+  const patterns = [
+    /【(.+?)】/,
+    /「(.+?)」/,
+    /『(.+?)』/,
+    /\[(.+?)\]/,
+  ];
+  for (const pattern of patterns) {
+    const match = title.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+// ─── Twitch: 人気ゲームを取得 ──────────────────────────────
+async function fetchTwitch() {
+  console.log('Fetching Twitch trends...');
+
+  const tokenRes = await fetch(
     `https://id.twitch.tv/oauth2/token?client_id=${process.env.TWITCH_CLIENT_ID}&client_secret=${process.env.TWITCH_CLIENT_SECRET}&grant_type=client_credentials`,
     { method: 'POST' }
   );
-  const data = await res.json();
-  return data.access_token;
-}
+  const tokenData = await tokenRes.json();
+  const token = tokenData.access_token;
 
-async function fetchTwitch() {
-  console.log('Fetching Twitch trends...');
-  const token = await getTwitchToken();
-
-  const res = await fetch('https://api.twitch.tv/helix/streams?first=20', {
+  // トップゲームを取得
+  const res = await fetch('https://api.twitch.tv/helix/games/top?first=20', {
     headers: {
       'Client-ID': process.env.TWITCH_CLIENT_ID,
       'Authorization': `Bearer ${token}`,
@@ -80,22 +155,55 @@ async function fetchTwitch() {
     return;
   }
 
-  const rows = data.data.map(stream => ({
-    platform:    'Twitch',
-    genre:       detectGenre(stream.title, [stream.game_name || '']),
-    title:       stream.title || stream.game_name,
-    description: `${stream.game_name} • 視聴者 ${stream.viewer_count.toLocaleString()}人`,
-    url:         `https://www.twitch.tv/${stream.user_login}`,
-    heat:        calcHeat(stream.viewer_count, [5000, 50000]),
-    source_id:   `tw_${stream.id}`,
-    expires_at:  new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24時間後に非表示
-  }));
+  // 各ゲームの視聴者数を取得
+  const gameIds = data.data.map(g => `game_id=${g.id}`).join('&');
+  const streamsRes = await fetch(
+    `https://api.twitch.tv/helix/streams?${gameIds}&first=100`,
+    {
+      headers: {
+        'Client-ID': process.env.TWITCH_CLIENT_ID,
+        'Authorization': `Bearer ${token}`,
+      }
+    }
+  );
+  const streamsData = await streamsRes.json();
+
+  // ゲームごとに視聴者数を集計
+  const viewerMap = new Map();
+  for (const stream of streamsData.data || []) {
+    const id = stream.game_id;
+    viewerMap.set(id, (viewerMap.get(id) || 0) + stream.viewer_count);
+  }
+
+  const rows = [];
+  for (const game of data.data) {
+    const totalViewers = viewerMap.get(game.id) || 0;
+    const { url, genre } = await resolveGameUrl(game.name);
+
+    rows.push({
+      platform:    'Twitch',
+      genre,
+      title:       game.name,
+      description: `視聴者数 ${totalViewers.toLocaleString()}人がライブ視聴中`,
+      url,
+      heat:        calcHeat(totalViewers, [10000, 100000]),
+      source_id:   `tw_game_${game.name.toLowerCase().replace(/\s+/g, '_')}`,
+      expires_at:  new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    });
+  }
 
   await upsertTrends(rows);
   console.log(`Twitch: ${rows.length}件保存`);
 }
 
-// ─── Supabase へ保存 ────────────────────────────────────
+// ─── 注目度スコア ──────────────────────────────────────────
+function calcHeat(value, thresholds) {
+  if (value >= thresholds[1]) return 3;
+  if (value >= thresholds[0]) return 2;
+  return 1;
+}
+
+// ─── Supabaseへ保存 ────────────────────────────────────────
 async function upsertTrends(rows) {
   const { error } = await supabase
     .from('trends')
@@ -104,7 +212,7 @@ async function upsertTrends(rows) {
   if (error) console.error('Supabase upsert error:', error);
 }
 
-// ─── メイン ─────────────────────────────────────────────
+// ─── メイン ────────────────────────────────────────────────
 async function main() {
   await Promise.all([
     fetchYouTube(),
