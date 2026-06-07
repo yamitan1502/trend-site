@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>トレンドまとめ</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f5f0;
+      color: #1a1a1a;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #fff;
+      border-bottom: 1px solid #e5e5e0;
+      padding: 1rem 1.5rem;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .chip {
+      padding: 4px 12px;
+      border-radius: 20px;
+      border: 1px solid #ddd;
+      background: #fff;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all .15s;
+      color: #555;
+    }
+
+    .chip:hover { background: #f0f0f0; }
+    .chip.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+
+    .chip.yt.active  { background: #c0392b; border-color: #c0392b; }
+    .chip.tw.active  { background: #6441a5; border-color: #6441a5; }
+    .chip.ig.active  { background: #c13584; border-color: #c13584; }
+    .chip.tk.active  { background: #010101; border-color: #010101; }
+    .chip.x.active   { background: #1da1f2; border-color: #1da1f2; }
+
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.25rem 1rem;
+    }
+
+    .meta {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 1rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      border: 1px solid #e5e5e0;
+      padding: 1rem;
+      text-decoration: none;
+      color: inherit;
+      display: block;
+      transition: border-color .15s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card:hover { border-color: #aaa; }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+
+    .badge-YouTube   { background: #fdecea; color: #c0392b; }
+    .badge-Twitch    { background: #f0eafa; color: #6441a5; }
+    .badge-Instagram { background: #fce4f3; color: #c13584; }
+    .badge-TikTok    { background: #e8e8e8; color: #010101; }
+    .badge-X         { background: #e8f4fd; color: #1da1f2; }
+
+    .time { font-size: 11px; color: #aaa; }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.4;
+      margin-bottom: 6px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .card-desc {
+      font-size: 12px;
+      color: #666;
+      line-height: 1.5;
+      margin-bottom: 10px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .genre {
+      font-size: 11px;
+      color: #888;
+      background: #f5f5f0;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+
+    .heat { display: flex; gap: 3px; }
+    .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #e0e0e0;
+    }
+    .dot.on-3 { background: #e74c3c; }
+    .dot.on-2 { background: #f39c12; }
+    .dot.on-1 { background: #27ae60; }
+
+    .expire-bar {
+      position: absolute;
+      bottom: 0; left: 0;
+      height: 2px;
+      width: 100%;
+      background: #f0f0f0;
+    }
+
+    .expire-fill { height: 100%; border-radius: 2px; }
+
+    .empty {
+      grid-column: 1/-1;
+      text-align: center;
+      padding: 3rem;
+      color: #aaa;
+      font-size: 14px;
+    }
+
+    .loading {
+      grid-column: 1/-1;
+      text-align: center;
+      padding: 3rem;
+      color: #aaa;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🔥 トレンドまとめ</h1>
+  <div class="filters">
+    <span style="font-size:11px;color:#aaa;align-self:center;">プラットフォーム</span>
+    <button class="chip active" data-filter="platform" data-val="all">すべて</button>
+    <button class="chip yt"     data-filter="platform" data-val="YouTube">YouTube</button>
+    <button class="chip tw"     data-filter="platform" data-val="Twitch">Twitch</button>
+    <button class="chip ig"     data-filter="platform" data-val="Instagram">Instagram</button>
+    <button class="chip tk"     data-filter="platform" data-val="TikTok">TikTok</button>
+    <button class="chip x"      data-filter="platform" data-val="X">X</button>
+    <span style="font-size:11px;color:#aaa;align-self:center;margin-left:4px;">ジャンル</span>
+    <button class="chip active" data-filter="genre" data-val="all">すべて</button>
+    <button class="chip" data-filter="genre" data-val="ゲーム">ゲーム</button>
+    <button class="chip" data-filter="genre" data-val="音楽">音楽</button>
+    <button class="chip" data-filter="genre" data-val="料理">料理</button>
+    <button class="chip" data-filter="genre" data-val="ファッション">ファッション</button>
+    <button class="chip" data-filter="genre" data-val="スポーツ">スポーツ</button>
+  </div>
+</header>
+
+<main>
+  <div class="meta" id="meta"></div>
+  <div class="grid" id="grid">
+    <div class="loading">読み込み中...</div>
+  </div>
+</main>
+
+<script type="module">
+  import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+
+  // ★ここを書き換える★
+  const SUPABASE_URL = 'https://htlwdznglrqrpwrblvqj.supabase.co/rest/v1/';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0bHdkem5nbHJxcnB3cmJsdnFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4MjM2MzUsImV4cCI6MjA5NjM5OTYzNX0.VkEImH-cCF-_a9RshJ1IPTr6aCWc5CvBM_SBb4TRoNQ';
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  let allTrends = [];
+  let pFilter = 'all', gFilter = 'all';
+
+  async function loadTrends() {
+    const { data, error } = await supabase
+      .from('active_trends')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      document.getElementById('grid').innerHTML =
+        '<div class="empty">データの取得に失敗しました。<br>SupabaseのURLとキーを確認してください。</div>';
+      console.error(error);
+      return;
+    }
+
+    allTrends = data || [];
+    render();
+  }
+
+  function timeAgo(iso) {
+    const diff = Date.now() - new Date(iso).getTime();
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor(diff / 60000);
+    if (h >= 1) return `${h}時間前`;
+    if (m >= 1) return `${m}分前`;
+    return 'たった今';
+  }
+
+  function expireRatio(expiresAt, createdAt) {
+    const total = new Date(expiresAt) - new Date(createdAt);
+    const left  = new Date(expiresAt) - Date.now();
+    return Math.max(0, Math.min(1, left / total));
+  }
+
+  function expireColor(ratio) {
+    if (ratio > 0.5) return '#27ae60';
+    if (ratio > 0.2) return '#f39c12';
+    return '#e74c3c';
+  }
+
+  function render() {
+    const filtered = allTrends.filter(t =>
+      (pFilter === 'all' || t.platform === pFilter) &&
+      (gFilter === 'all' || t.genre === gFilter)
+    );
+
+    document.getElementById('meta').textContent =
+      `${filtered.length}件表示中（期限切れは自動非表示）`;
+
+    const grid = document.getElementById('grid');
+
+    if (!filtered.length) {
+      grid.innerHTML = '<div class="empty">該当するトレンドがありません</div>';
+      return;
+    }
+
+    grid.innerHTML = filtered.map(t => {
+      const ratio = expireRatio(t.expires_at, t.created_at);
+      const color = expireColor(ratio);
+      const dots  = [1, 2, 3].map(i =>
+        `<span class="dot${i <= t.heat ? ` on-${t.heat}` : ''}"></span>`
+      ).join('');
+
+      return `
+        <a class="card" href="${t.url || '#'}" target="_blank" rel="noopener">
+          <div class="card-top">
+            <span class="badge badge-${t.platform}">${t.platform}</span>
+            <span class="time">${timeAgo(t.created_at)}</span>
+          </div>
+          <div class="card-title">${t.title}</div>
+          <div class="card-desc">${t.description || ''}</div>
+          <div class="card-footer">
+            <span class="genre">${t.genre || 'その他'}</span>
+            <span class="heat">${dots}</span>
+          </div>
+          <div class="expire-bar">
+            <div class="expire-fill" style="width:${Math.round(ratio * 100)}%;background:${color}"></div>
+          </div>
+        </a>`;
+    }).join('');
+  }
+
+  // フィルター操作
+  document.querySelectorAll('.chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const f = btn.dataset.filter;
+      const v = btn.dataset.val;
+      document.querySelectorAll(`.chip[data-filter="${f}"]`)
+        .forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      if (f === 'platform') pFilter = v;
+      else gFilter = v;
+      render();
+    });
+  });
+
+  // 初回読み込み＆5分ごとに自動更新
+  loadTrends();
+  setInterval(loadTrends, 5 * 60 * 1000);
+</script>
+
+</body>
+</html>
